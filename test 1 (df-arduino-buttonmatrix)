@@ -1,0 +1,122 @@
+#include <SoftwareSerial.h>
+#include <DFRobotDFPlayerMini.h>
+#include <Keypad.h>
+
+SoftwareSerial mp3Serial(10, 11); // RX, TX
+DFRobotDFPlayerMini mp3;
+
+const int album1Btn = 12;
+const int album2Btn = 9;
+
+int selectedAlbum = 0;
+String typedTrack = "";
+
+const byte ROWS = 4;
+const byte COLS = 3;
+
+char keys[ROWS][COLS] = {
+  {'1','2','3'},
+  {'4','5','6'},
+  {'7','8','9'},
+  {'*','0','#'}
+};
+
+byte rowPins[ROWS] = {2, 3, 4, 5};
+byte colPins[COLS] = {6, 7, 8};
+
+Keypad keypad = Keypad(makeKeymap(keys), rowPins, colPins, ROWS, COLS);
+
+bool lastA1 = HIGH;
+bool lastA2 = HIGH;
+
+void setup() {
+  Serial.begin(9600);
+
+  pinMode(album1Btn, INPUT_PULLUP);
+  pinMode(album2Btn, INPUT_PULLUP);
+
+  mp3Serial.begin(9600);
+
+  if (mp3.begin(mp3Serial)) {
+    Serial.println("DFPlayer OK");
+    mp3.volume(25);
+  } else {
+    Serial.println("DFPlayer ERROR");
+    while (true);
+  }
+
+  Serial.println("Pick album, type track, press #");
+}
+
+void loop() {
+  checkAlbums();
+  checkKeypad();
+}
+
+void checkAlbums() {
+  bool a1 = digitalRead(album1Btn);
+  bool a2 = digitalRead(album2Btn);
+
+  if (lastA1 == HIGH && a1 == LOW) {
+    selectedAlbum = 6;
+    typedTrack = "";
+    Serial.println("Album 1 selected");
+  }
+
+  if (lastA2 == HIGH && a2 == LOW) {
+    selectedAlbum = 7;
+    typedTrack = "";
+    Serial.println("Album 2 selected");
+  }
+
+  lastA1 = a1;
+  lastA2 = a2;
+}
+
+void checkKeypad() {
+  char key = keypad.getKey();
+  if (!key) return;
+
+  Serial.print("Key: ");
+  Serial.println(key);
+
+  if (key >= '0' && key <= '9') {
+    typedTrack += key;
+    Serial.print("Track: ");
+    Serial.println(typedTrack);
+  }
+
+  if (key == '*') {
+    typedTrack = "";
+    Serial.println("Cleared");
+  }
+
+  if (key == '#') {
+    playSong();
+  }
+}
+
+void playSong() {
+  if (selectedAlbum == 0) {
+    Serial.println("Choose album first");
+    return;
+  }
+
+  if (typedTrack.length() == 0) {
+    Serial.println("Type track first");
+    return;
+  }
+
+  int track = typedTrack.toInt();
+
+  Serial.print("Playing folder ");
+  Serial.print(selectedAlbum);
+  Serial.print(" track ");
+  Serial.println(track);
+
+  mp3.stop();
+  delay(200);
+  mp3.playFolder(selectedAlbum, track);
+
+  typedTrack = "";
+}
