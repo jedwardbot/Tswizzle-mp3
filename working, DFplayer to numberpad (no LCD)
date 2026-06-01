@@ -1,0 +1,199 @@
+#include <Wire.h>
+#include <Adafruit_MCP23X17.h>
+#include <SoftwareSerial.h>
+#include <DFRobotDFPlayerMini.h>
+
+Adafruit_MCP23X17 mcp;
+
+SoftwareSerial mp3Serial(10, 11); // RX, TX
+DFRobotDFPlayerMini mp3;
+
+// MCP address
+const byte MCP_ADDR = 0x27;
+
+// Album keypad on Port A
+byte albumRows[4] = {0, 1, 2, 3};   // PA0-PA3
+byte albumCols[3] = {4, 5, 6};      // PA4-PA6
+
+// Number keypad on Port B
+byte trackRows[4] = {8, 9, 10, 11}; // PB0-PB3
+byte trackCols[3] = {12, 13, 14};   // PB4-PB6
+
+int albumMap[4][3] = {
+  {1, 2, 3},
+  {4, 5, 6},
+  {7, 8, 9},
+  {10, 11, 12}
+};
+
+char trackMap[4][3] = {
+  {'1','2','3'},
+  {'4','5','6'},
+  {'7','8','9'},
+  {'*','0','#'}
+};
+
+const char* albumNames[13] = {
+  "",
+  "Taylor Swift",
+  "Fearless",
+  "Speak Now",
+  "Red",
+  "1989",
+  "Reputation",
+  "Lover",
+  "Folklore",
+  "Evermore",
+  "Midnights",
+  "TTPD",
+  "Life of a Showgirl"
+};
+
+int selectedAlbum = 0;
+String typedTrack = "";
+
+unsigned long lastPress = 0;
+const unsigned long debounceDelay = 250;
+
+void setup() {
+  Serial.begin(9600);
+  Wire.begin();
+
+  Serial.println("Starting...");
+
+  if (!mcp.begin_I2C(MCP_ADDR)) {
+    Serial.println("MCP NOT FOUND");
+    while (1);
+  }
+
+  setupKeypad(albumRows, albumCols);
+  setupKeypad(trackRows, trackCols);
+
+  mp3Serial.begin(9600);
+
+  if (!mp3.begin(mp3Serial)) {
+    Serial.println("DFPlayer ERROR");
+    while (1);
+  }
+
+  mp3.volume(22);
+
+  Serial.println("Ready!");
+  Serial.println("Pick album, type track, press #");
+}
+
+void loop() {
+  int album = scanAlbumKeypad();
+
+  if (album > 0) {
+    selectedAlbum = album;
+    typedTrack = "";
+
+    Serial.print("Album ");
+    Serial.print(selectedAlbum);
+    Serial.print(": ");
+    Serial.println(albumNames[selectedAlbum]);
+
+    Serial.println("Enter track number, then press #");
+  }
+
+  char key = scanTrackKeypad();
+
+  if (key != 0) {
+    handleTrackKey(key);
+  }
+}
+
+void setupKeypad(byte rows[4], byte cols[3]) {
+  for (int r = 0; r < 4; r++) {
+    mcp.pinMode(rows[r], OUTPUT);
+    mcp.digitalWrite(rows[r], HIGH);
+  }
+
+  for (int c = 0; c < 3; c++) {
+    mcp.pinMode(cols[c], INPUT_PULLUP);
+  }
+}
+
+int scanAlbumKeypad() {
+  if (millis() - lastPress < debounceDelay) return 0;
+
+  for (int r = 0; r < 4; r++) {
+    setRowsHigh(albumRows);
+    mcp.digitalWrite(albumRows[r], LOW);
+
+    for (int c = 0; c < 3; c++) {
+      if (mcp.digitalRead(albumCols[c]) == LOW) {
+        lastPress = millis();
+        return albumMap[r][c];
+      }
+    }
+  }
+
+  return 0;
+}
+
+char scanTrackKeypad() {
+  if (millis() - lastPress < debounceDelay) return 0;
+
+  for (int r = 0; r < 4; r++) {
+    setRowsHigh(trackRows);
+    mcp.digitalWrite(trackRows[r], LOW);
+
+    for (int c = 0; c < 3; c++) {
+      if (mcp.digitalRead(trackCols[c]) == LOW) {
+        lastPress = millis();
+        return trackMap[r][c];
+      }
+    }
+  }
+
+  return 0;
+}
+
+void setRowsHigh(byte rows[4]) {
+  for (int r = 0; r < 4; r++) {
+    mcp.digitalWrite(rows[r], HIGH);
+  }
+}
+
+void handleTrackKey(char key) {
+  if (key >= '0' && key <= '9') {
+    typedTrack += key;
+
+    Serial.print("Track typed: ");
+    Serial.println(typedTrack);
+  }
+
+  if (key == '*') {
+    typedTrack = "";
+    Serial.println("Track cleared");
+  }
+
+  if (key == '#') {
+    playSong();
+  }
+}
+
+void playSong() {
+  if (selectedAlbum == 0) {
+    Serial.println("Pick an album first");
+    return;
+  }
+
+  if (typedTrack.length() == 0) {
+    Serial.println("Type a track first");
+    return;
+  }
+
+  int track = typedTrack.toInt();
+
+  Serial.print("Playing: ");
+  Serial.print(albumNames[selectedAlbum]);
+  Serial.print(" / Track ");
+  Serial.println(track);
+
+  mp3.playFolder(selectedAlbum, track);
+
+  typedTrack = "";
+}
