@@ -1,0 +1,590 @@
+#include <Wire.h>
+#include <Adafruit_MCP23X17.h>
+#include <LiquidCrystal_I2C.h>
+#include <SoftwareSerial.h>
+#include <DFRobotDFPlayerMini.h>
+#include <avr/pgmspace.h>
+
+// I2C addresses from your setup
+const byte LCD_ADDR = 0x26;
+const byte MCP_ADDR = 0x27;
+
+// DFPlayer wiring for your current setup:
+// DFPlayer TX -> Nano D11
+// DFPlayer RX -> Nano D10 through 1k resistor
+SoftwareSerial mp3Serial(11, 10); // Arduino RX, TX
+
+Adafruit_MCP23X17 mcp;
+LiquidCrystal_I2C lcd(LCD_ADDR, 16, 2);
+DFRobotDFPlayerMini mp3;
+
+// Album keypad on MCP Port A
+byte albumRows[4] = {0, 1, 2, 3};   // PA0-PA3
+byte albumCols[3] = {4, 5, 6};      // PA4-PA6
+
+// Track keypad on MCP Port B
+byte trackRows[4] = {8, 9, 10, 11}; // PB0-PB3
+byte trackCols[3] = {12, 13, 14};   // PB4-PB6
+
+int albumMap[4][3] = {
+  {1, 2, 3},
+  {4, 5, 6},
+  {7, 8, 9},
+  {10, 11, 12}
+};
+
+char trackMap[4][3] = {
+  {'1','2','3'},
+  {'4','5','6'},
+  {'7','8','9'},
+  {'*','0','#'}
+};
+
+int selectedAlbum = 0;
+String typedTrack = "";
+
+unsigned long lastPress = 0;
+const unsigned long debounceDelay = 250;
+
+char nameBuffer[80];
+
+// ---------- Album names ----------
+
+const char albumName_01[] PROGMEM = "Taylor Swift";
+const char albumName_02[] PROGMEM = "Fearless";
+const char albumName_03[] PROGMEM = "Speak Now";
+const char albumName_04[] PROGMEM = "Red";
+const char albumName_05[] PROGMEM = "1989";
+const char albumName_06[] PROGMEM = "Reputation";
+const char albumName_07[] PROGMEM = "Lover";
+const char albumName_08[] PROGMEM = "Folklore";
+const char albumName_09[] PROGMEM = "Evermore";
+const char albumName_10[] PROGMEM = "Midnights";
+const char albumName_11[] PROGMEM = "TTPD";
+const char albumName_12[] PROGMEM = "Life of a Showgirl";
+const char* const albumNames[] PROGMEM = { nullptr, albumName_01, albumName_02, albumName_03, albumName_04, albumName_05, albumName_06, albumName_07, albumName_08, albumName_09, albumName_10, albumName_11, albumName_12 };
+
+// ---------- Track names ----------
+const char track_01_001[] PROGMEM = "Tim McGraw";
+const char track_01_002[] PROGMEM = "Picture To Burn";
+const char track_01_003[] PROGMEM = "Teardrops On My Guitar";
+const char track_01_004[] PROGMEM = "A Place In This World";
+const char track_01_005[] PROGMEM = "Cold As You";
+const char track_01_006[] PROGMEM = "The Outside";
+const char track_01_007[] PROGMEM = "Tied Together With A Smile";
+const char track_01_008[] PROGMEM = "Stay Beautiful";
+const char track_01_009[] PROGMEM = "Should've Said No";
+const char track_01_010[] PROGMEM = "Mary's Song (Oh My My My)";
+const char track_01_011[] PROGMEM = "Our Song";
+const char track_01_012[] PROGMEM = "I'm Only Me When I'm With You";
+const char track_01_013[] PROGMEM = "Invisible";
+const char track_01_014[] PROGMEM = "A Perfectly Good Heart";
+
+const char track_02_001[] PROGMEM = "Fearless";
+const char track_02_002[] PROGMEM = "Fifteen";
+const char track_02_003[] PROGMEM = "Love Story";
+const char track_02_004[] PROGMEM = "Hey Stephen";
+const char track_02_005[] PROGMEM = "White Horse";
+const char track_02_006[] PROGMEM = "You Belong With Me";
+const char track_02_007[] PROGMEM = "Breathe";
+const char track_02_008[] PROGMEM = "Tell Me Why";
+const char track_02_009[] PROGMEM = "You're Not Sorry";
+const char track_02_010[] PROGMEM = "The Way I Loved You";
+const char track_02_011[] PROGMEM = "Forever & Always";
+const char track_02_012[] PROGMEM = "The Best Day";
+const char track_02_013[] PROGMEM = "Change";
+const char track_02_014[] PROGMEM = "Jump Then Fall";
+const char track_02_015[] PROGMEM = "Untouchable";
+const char track_02_016[] PROGMEM = "Forever & Always (Piano Version)";
+const char track_02_017[] PROGMEM = "Come In With The Rain";
+const char track_02_018[] PROGMEM = "SuperStar";
+const char track_02_019[] PROGMEM = "The Other Side Of The Door";
+const char track_02_020[] PROGMEM = "Today Was A Fairytale";
+const char track_02_021[] PROGMEM = "You All Over Me (From The Vault)";
+const char track_02_022[] PROGMEM = "Mr. Perfectly Fine (From The Vault)";
+const char track_02_023[] PROGMEM = "We Were Happy (From The Vault)";
+const char track_02_024[] PROGMEM = "That's When (From The Vault)";
+const char track_02_025[] PROGMEM = "Don't You (From The Vault)";
+const char track_02_026[] PROGMEM = "Bye Bye Baby (From The Vault)";
+
+const char track_03_001[] PROGMEM = "Mine";
+const char track_03_002[] PROGMEM = "Sparks Fly";
+const char track_03_003[] PROGMEM = "Back To December";
+const char track_03_004[] PROGMEM = "Speak Now";
+const char track_03_005[] PROGMEM = "Dear John";
+const char track_03_006[] PROGMEM = "Mean";
+const char track_03_007[] PROGMEM = "The Story Of Us";
+const char track_03_008[] PROGMEM = "Never Grow Up";
+const char track_03_009[] PROGMEM = "Enchanted";
+const char track_03_010[] PROGMEM = "Better Then Revenge";
+const char track_03_011[] PROGMEM = "Innocent";
+const char track_03_012[] PROGMEM = "Haunted";
+const char track_03_013[] PROGMEM = "Last Kiss";
+const char track_03_014[] PROGMEM = "Long Live";
+const char track_03_015[] PROGMEM = "Ours";
+const char track_03_016[] PROGMEM = "If This Was A Movie";
+const char track_03_017[] PROGMEM = "Superman";
+const char track_03_018[] PROGMEM = "Electric Touch (From The Vault)";
+const char track_03_019[] PROGMEM = "When Emma Falls in Love (From The Vault)";
+const char track_03_020[] PROGMEM = "I Can See You (From The Vault)";
+const char track_03_021[] PROGMEM = "Castles Crumbling (From The Vault)";
+const char track_03_022[] PROGMEM = "Foolish One (From The Vault)";
+const char track_03_023[] PROGMEM = "Timeless (From The Vault)";
+
+const char track_04_001[] PROGMEM = "State Of Grace";
+const char track_04_002[] PROGMEM = "Red";
+const char track_04_003[] PROGMEM = "Treacherous";
+const char track_04_004[] PROGMEM = "I Knew You Were Trouble.";
+const char track_04_005[] PROGMEM = "All Too Well";
+const char track_04_006[] PROGMEM = "22";
+const char track_04_007[] PROGMEM = "I Almost Do";
+const char track_04_008[] PROGMEM = "We Are Never Ever Getting Back Together";
+const char track_04_009[] PROGMEM = "Stay Stay Stay";
+const char track_04_010[] PROGMEM = "The Last Time";
+const char track_04_011[] PROGMEM = "Holy Ground";
+const char track_04_012[] PROGMEM = "Everything Has Changed";
+const char track_04_013[] PROGMEM = "Sad Beautiful Tragic";
+const char track_04_014[] PROGMEM = "The Lucky One";
+const char track_04_015[] PROGMEM = "Starlight";
+const char track_04_016[] PROGMEM = "Begin Again";
+const char track_04_017[] PROGMEM = "The Moment I Knew";
+const char track_04_018[] PROGMEM = "Come Back...Be Here";
+const char track_04_019[] PROGMEM = "Girl At Home";
+const char track_04_020[] PROGMEM = "State Of Grace (Acoustic)";
+const char track_04_021[] PROGMEM = "Ronan";
+const char track_04_022[] PROGMEM = "Better Man (From The Vault)";
+const char track_04_023[] PROGMEM = "Nothing New (From The Vault)";
+const char track_04_024[] PROGMEM = "Babe (From The Vault)";
+const char track_04_025[] PROGMEM = "Message In A Bottle (From The Vault)";
+const char track_04_026[] PROGMEM = "I Bet You Think About Me (From The Vault)";
+const char track_04_027[] PROGMEM = "Forever Winter (From The Vault)";
+const char track_04_028[] PROGMEM = "Run (From The Vault)";
+const char track_04_029[] PROGMEM = "The Very First Night (From The Vault)";
+const char track_04_030[] PROGMEM = "All Too Well (10 Minute Version) (From The Vault)";
+
+const char track_05_001[] PROGMEM = "Welcome To New York";
+const char track_05_002[] PROGMEM = "Blank Space";
+const char track_05_003[] PROGMEM = "Style";
+const char track_05_004[] PROGMEM = "Out Of The Woods";
+const char track_05_005[] PROGMEM = "All You Had To Do Was Stay";
+const char track_05_006[] PROGMEM = "Shake It Off";
+const char track_05_007[] PROGMEM = "I Wish You Would";
+const char track_05_008[] PROGMEM = "Bad Blood";
+const char track_05_009[] PROGMEM = "Wildest Dreams";
+const char track_05_010[] PROGMEM = "How You Get The Girl";
+const char track_05_011[] PROGMEM = "This Love";
+const char track_05_012[] PROGMEM = "I Know Places";
+const char track_05_013[] PROGMEM = "Clean";
+const char track_05_014[] PROGMEM = "Wonderland";
+const char track_05_015[] PROGMEM = "You Are In Love";
+const char track_05_016[] PROGMEM = "New Romantics";
+const char track_05_017[] PROGMEM = "\"Slut!\" (Taylor's Version) (From The Vault)";
+const char track_05_018[] PROGMEM = "Say Don't Go (Taylor's Version) (From The Vault)";
+const char track_05_019[] PROGMEM = "Now That We Don't Talk (Taylor's Version) (From The Vault)";
+const char track_05_020[] PROGMEM = "Suburban Legends (Taylor's Version) (From The Vault)";
+const char track_05_021[] PROGMEM = "Is It Over Now? (Taylor's Version) (From The Vault)";
+const char track_05_022[] PROGMEM = "Bad Blood (Taylor's Version)";
+const char track_05_023[] PROGMEM = "I Don't Wanna Live Forever";
+
+const char track_06_001[] PROGMEM = "Ready For It?";
+const char track_06_002[] PROGMEM = "End Game";
+const char track_06_003[] PROGMEM = "I Did Something Bad";
+const char track_06_004[] PROGMEM = "Don't Blame Me";
+const char track_06_005[] PROGMEM = "Delicate";
+const char track_06_006[] PROGMEM = "Look What You Made Me Do";
+const char track_06_007[] PROGMEM = "So It Goes...";
+const char track_06_008[] PROGMEM = "Gorgeous";
+const char track_06_009[] PROGMEM = "Getaway Car";
+const char track_06_010[] PROGMEM = "King Of My Heart";
+const char track_06_011[] PROGMEM = "Dancing With Our Hands Tied";
+const char track_06_012[] PROGMEM = "Dress";
+const char track_06_013[] PROGMEM = "This Is Why We Can't Have Nice Things";
+const char track_06_014[] PROGMEM = "Call It What You Want";
+const char track_06_015[] PROGMEM = "New Year's Day";
+
+const char track_07_001[] PROGMEM = "I Forgot That You Existed";
+const char track_07_002[] PROGMEM = "Cruel Summer";
+const char track_07_003[] PROGMEM = "Lover";
+const char track_07_004[] PROGMEM = "The Man";
+const char track_07_005[] PROGMEM = "The Archer";
+const char track_07_006[] PROGMEM = "I Think He Knows";
+const char track_07_007[] PROGMEM = "Miss Americana & The Heartbreak Prince";
+const char track_07_008[] PROGMEM = "Paper Rings";
+const char track_07_009[] PROGMEM = "Cornelia Street";
+const char track_07_010[] PROGMEM = "Death By A Thousand Cuts";
+const char track_07_011[] PROGMEM = "London Boy";
+const char track_07_012[] PROGMEM = "Soon You'll Get Better";
+const char track_07_013[] PROGMEM = "False God";
+const char track_07_014[] PROGMEM = "You Need To Calm Down";
+const char track_07_015[] PROGMEM = "Afterglow";
+const char track_07_016[] PROGMEM = "ME!";
+const char track_07_017[] PROGMEM = "It's Nice To Have A Friend";
+const char track_07_018[] PROGMEM = "Daylight";
+const char track_07_019[] PROGMEM = "All Of The Girls You Loved Before";
+const char track_07_020[] PROGMEM = "Christmas Tree Farm";
+const char track_07_021[] PROGMEM = "Only The Young";
+
+const char track_08_001[] PROGMEM = "the 1";
+const char track_08_002[] PROGMEM = "cardigan";
+const char track_08_003[] PROGMEM = "the last great american dynasty";
+const char track_08_004[] PROGMEM = "exile";
+const char track_08_005[] PROGMEM = "my tears ricochet";
+const char track_08_006[] PROGMEM = "mirrorball";
+const char track_08_007[] PROGMEM = "seven";
+const char track_08_008[] PROGMEM = "august";
+const char track_08_009[] PROGMEM = "this is me trying";
+const char track_08_010[] PROGMEM = "illicit affairs";
+const char track_08_011[] PROGMEM = "invisible string";
+const char track_08_012[] PROGMEM = "mad woman";
+const char track_08_013[] PROGMEM = "epiphany";
+const char track_08_014[] PROGMEM = "betty";
+const char track_08_015[] PROGMEM = "peace";
+const char track_08_016[] PROGMEM = "hoax";
+const char track_08_017[] PROGMEM = "the lakes (bonus track)";
+
+const char track_09_001[] PROGMEM = "willow";
+const char track_09_002[] PROGMEM = "champagne problems";
+const char track_09_003[] PROGMEM = "gold rush";
+const char track_09_004[] PROGMEM = "`tis the damn season";
+const char track_09_005[] PROGMEM = "tolerate it";
+const char track_09_006[] PROGMEM = "no body, no crime";
+const char track_09_007[] PROGMEM = "happiness";
+const char track_09_008[] PROGMEM = "dorothea";
+const char track_09_009[] PROGMEM = "coney island";
+const char track_09_010[] PROGMEM = "ivy";
+const char track_09_011[] PROGMEM = "cowboy like me";
+const char track_09_012[] PROGMEM = "long story short";
+const char track_09_013[] PROGMEM = "marjorie";
+const char track_09_014[] PROGMEM = "closure";
+const char track_09_015[] PROGMEM = "evermore";
+const char track_09_016[] PROGMEM = "right where you left me (bonus track)";
+const char track_09_017[] PROGMEM = "it's time to go (bonus track)";
+
+const char track_10_001[] PROGMEM = "Lavender Haze";
+const char track_10_002[] PROGMEM = "Maroon";
+const char track_10_003[] PROGMEM = "Anti-Hero";
+const char track_10_004[] PROGMEM = "Snow On The Beach";
+const char track_10_005[] PROGMEM = "You're On Your Own, Kid";
+const char track_10_006[] PROGMEM = "Midnight Rain";
+const char track_10_007[] PROGMEM = "Question... ?";
+const char track_10_008[] PROGMEM = "Vigilante Shit";
+const char track_10_009[] PROGMEM = "Bejeweled";
+const char track_10_010[] PROGMEM = "Labyrinth";
+const char track_10_011[] PROGMEM = "Karma";
+const char track_10_012[] PROGMEM = "Sweet Nothing";
+const char track_10_013[] PROGMEM = "Mastermind";
+const char track_10_014[] PROGMEM = "The Great War";
+const char track_10_015[] PROGMEM = "Bigger Than The Whole Sky";
+const char track_10_016[] PROGMEM = "Paris";
+const char track_10_017[] PROGMEM = "High Infidelity";
+const char track_10_018[] PROGMEM = "Glitch";
+const char track_10_019[] PROGMEM = "Would've, Could've, Should've";
+const char track_10_020[] PROGMEM = "Dear Reader";
+const char track_10_021[] PROGMEM = "Hits Different";
+const char track_10_022[] PROGMEM = "Snow On The Beach (feat. More Lana Del Rey)";
+const char track_10_023[] PROGMEM = "Karma";
+
+const char track_11_001[] PROGMEM = "Fortnight";
+const char track_11_002[] PROGMEM = "The Tortured Poets Department";
+const char track_11_003[] PROGMEM = "My Boy Only Breaks His Favorite Toys";
+const char track_11_004[] PROGMEM = "Down Bad";
+const char track_11_005[] PROGMEM = "So Long, London";
+const char track_11_006[] PROGMEM = "But Daddy I Love Him";
+const char track_11_007[] PROGMEM = "Fresh Out The Slammer";
+const char track_11_008[] PROGMEM = "Florida!!!";
+const char track_11_009[] PROGMEM = "Guilty as Sin?";
+const char track_11_010[] PROGMEM = "Who's Afraid of Little Old Me?";
+const char track_11_011[] PROGMEM = "I Can Fix Him (No Really I Can)";
+const char track_11_012[] PROGMEM = "loml";
+const char track_11_013[] PROGMEM = "I Can Do It With a Broken Heart";
+const char track_11_014[] PROGMEM = "The Smallest Man Who Ever Lived";
+const char track_11_015[] PROGMEM = "The Alchemy";
+const char track_11_016[] PROGMEM = "Clara Bow";
+const char track_11_017[] PROGMEM = "The Black Dog";
+const char track_11_018[] PROGMEM = "imgonnagetyouback";
+const char track_11_019[] PROGMEM = "The Albatross";
+const char track_11_020[] PROGMEM = "Chloe or Sam or Sophia or Marcus";
+const char track_11_021[] PROGMEM = "How Did It End?";
+const char track_11_022[] PROGMEM = "So High School";
+const char track_11_023[] PROGMEM = "I Hate It Here";
+const char track_11_024[] PROGMEM = "thanK you aIMee";
+const char track_11_025[] PROGMEM = "I Look in People's Windows";
+const char track_11_026[] PROGMEM = "The Prophecy";
+const char track_11_027[] PROGMEM = "Cassandra";
+const char track_11_028[] PROGMEM = "Peter";
+const char track_11_029[] PROGMEM = "The Bolter";
+const char track_11_030[] PROGMEM = "Robin";
+const char track_11_031[] PROGMEM = "The Manuscript";
+
+const char track_12_001[] PROGMEM = "The Fate of Ophelia";
+const char track_12_002[] PROGMEM = "Elizabeth Taylor";
+const char track_12_003[] PROGMEM = "Opalite";
+const char track_12_004[] PROGMEM = "Father Figure";
+const char track_12_005[] PROGMEM = "Eldest Daughter";
+const char track_12_006[] PROGMEM = "Ruin The Friendship";
+const char track_12_007[] PROGMEM = "Actually Romantic";
+const char track_12_008[] PROGMEM = "Wi$h Li$t";
+const char track_12_009[] PROGMEM = "Wood";
+const char track_12_010[] PROGMEM = "CANCELLED!";
+const char track_12_011[] PROGMEM = "Honey";
+const char track_12_012[] PROGMEM = "The Life of a Showgirl";
+
+const char* const albumTracks_01[] PROGMEM = { nullptr, track_01_001, track_01_002, track_01_003, track_01_004, track_01_005, track_01_006, track_01_007, track_01_008, track_01_009, track_01_010, track_01_011, track_01_012, track_01_013, track_01_014 };
+const char* const albumTracks_02[] PROGMEM = { nullptr, track_02_001, track_02_002, track_02_003, track_02_004, track_02_005, track_02_006, track_02_007, track_02_008, track_02_009, track_02_010, track_02_011, track_02_012, track_02_013, track_02_014, track_02_015, track_02_016, track_02_017, track_02_018, track_02_019, track_02_020, track_02_021, track_02_022, track_02_023, track_02_024, track_02_025, track_02_026 };
+const char* const albumTracks_03[] PROGMEM = { nullptr, track_03_001, track_03_002, track_03_003, track_03_004, track_03_005, track_03_006, track_03_007, track_03_008, track_03_009, track_03_010, track_03_011, track_03_012, track_03_013, track_03_014, track_03_015, track_03_016, track_03_017, track_03_018, track_03_019, track_03_020, track_03_021, track_03_022, track_03_023 };
+const char* const albumTracks_04[] PROGMEM = { nullptr, track_04_001, track_04_002, track_04_003, track_04_004, track_04_005, track_04_006, track_04_007, track_04_008, track_04_009, track_04_010, track_04_011, track_04_012, track_04_013, track_04_014, track_04_015, track_04_016, track_04_017, track_04_018, track_04_019, track_04_020, track_04_021, track_04_022, track_04_023, track_04_024, track_04_025, track_04_026, track_04_027, track_04_028, track_04_029, track_04_030 };
+const char* const albumTracks_05[] PROGMEM = { nullptr, track_05_001, track_05_002, track_05_003, track_05_004, track_05_005, track_05_006, track_05_007, track_05_008, track_05_009, track_05_010, track_05_011, track_05_012, track_05_013, track_05_014, track_05_015, track_05_016, track_05_017, track_05_018, track_05_019, track_05_020, track_05_021, track_05_022, track_05_023 };
+const char* const albumTracks_06[] PROGMEM = { nullptr, track_06_001, track_06_002, track_06_003, track_06_004, track_06_005, track_06_006, track_06_007, track_06_008, track_06_009, track_06_010, track_06_011, track_06_012, track_06_013, track_06_014, track_06_015 };
+const char* const albumTracks_07[] PROGMEM = { nullptr, track_07_001, track_07_002, track_07_003, track_07_004, track_07_005, track_07_006, track_07_007, track_07_008, track_07_009, track_07_010, track_07_011, track_07_012, track_07_013, track_07_014, track_07_015, track_07_016, track_07_017, track_07_018, track_07_019, track_07_020, track_07_021 };
+const char* const albumTracks_08[] PROGMEM = { nullptr, track_08_001, track_08_002, track_08_003, track_08_004, track_08_005, track_08_006, track_08_007, track_08_008, track_08_009, track_08_010, track_08_011, track_08_012, track_08_013, track_08_014, track_08_015, track_08_016, track_08_017 };
+const char* const albumTracks_09[] PROGMEM = { nullptr, track_09_001, track_09_002, track_09_003, track_09_004, track_09_005, track_09_006, track_09_007, track_09_008, track_09_009, track_09_010, track_09_011, track_09_012, track_09_013, track_09_014, track_09_015, track_09_016, track_09_017 };
+const char* const albumTracks_10[] PROGMEM = { nullptr, track_10_001, track_10_002, track_10_003, track_10_004, track_10_005, track_10_006, track_10_007, track_10_008, track_10_009, track_10_010, track_10_011, track_10_012, track_10_013, track_10_014, track_10_015, track_10_016, track_10_017, track_10_018, track_10_019, track_10_020, track_10_021, track_10_022, track_10_023 };
+const char* const albumTracks_11[] PROGMEM = { nullptr, track_11_001, track_11_002, track_11_003, track_11_004, track_11_005, track_11_006, track_11_007, track_11_008, track_11_009, track_11_010, track_11_011, track_11_012, track_11_013, track_11_014, track_11_015, track_11_016, track_11_017, track_11_018, track_11_019, track_11_020, track_11_021, track_11_022, track_11_023, track_11_024, track_11_025, track_11_026, track_11_027, track_11_028, track_11_029, track_11_030, track_11_031 };
+const char* const albumTracks_12[] PROGMEM = { nullptr, track_12_001, track_12_002, track_12_003, track_12_004, track_12_005, track_12_006, track_12_007, track_12_008, track_12_009, track_12_010, track_12_011, track_12_012 };
+const char* const* const allTracks[] PROGMEM = { nullptr, albumTracks_01, albumTracks_02, albumTracks_03, albumTracks_04, albumTracks_05, albumTracks_06, albumTracks_07, albumTracks_08, albumTracks_09, albumTracks_10, albumTracks_11, albumTracks_12 };
+const byte trackCounts[13] = { 0, 14, 26, 23, 30, 23, 15, 21, 17, 17, 23, 31, 12 };
+
+
+void setup() {
+  Serial.begin(9600);
+  Wire.begin();
+
+  lcd.init();
+  lcd.backlight();
+  lcd.clear();
+  lcdPrintLine(0, "Starting...");
+  lcdPrintLine(1, "");
+
+  Serial.println("Starting...");
+
+  if (!mcp.begin_I2C(MCP_ADDR)) {
+    Serial.println("MCP NOT FOUND");
+    lcdPrintLine(0, "MCP NOT FOUND");
+    while (1);
+  }
+
+  setupKeypad(albumRows, albumCols);
+  setupKeypad(trackRows, trackCols);
+
+  mp3Serial.begin(9600);
+
+  if (!mp3.begin(mp3Serial)) {
+    Serial.println("DFPlayer ERROR");
+    lcdPrintLine(0, "DFPlayer ERROR");
+    while (1);
+  }
+
+  mp3.volume(22);
+
+  Serial.println("Ready!");
+  showHome();
+}
+
+void loop() {
+  int album = scanAlbumKeypad();
+
+  if (album > 0) {
+    selectedAlbum = album;
+    typedTrack = "";
+
+    getAlbumName(selectedAlbum, nameBuffer, sizeof(nameBuffer));
+
+    Serial.print("Album ");
+    Serial.print(selectedAlbum);
+    Serial.print(": ");
+    Serial.println(nameBuffer);
+
+    lcd.clear();
+    lcdPrintLine(0, nameBuffer);
+    lcdPrintLine(1, "Enter track");
+  }
+
+  char key = scanTrackKeypad();
+
+  if (key != 0) {
+    handleTrackKey(key);
+  }
+}
+
+void setupKeypad(byte rows[4], byte cols[3]) {
+  for (int r = 0; r < 4; r++) {
+    mcp.pinMode(rows[r], OUTPUT);
+    mcp.digitalWrite(rows[r], HIGH);
+  }
+
+  for (int c = 0; c < 3; c++) {
+    mcp.pinMode(cols[c], INPUT_PULLUP);
+  }
+}
+
+int scanAlbumKeypad() {
+  if (millis() - lastPress < debounceDelay) return 0;
+
+  for (int r = 0; r < 4; r++) {
+    setRowsHigh(albumRows);
+    mcp.digitalWrite(albumRows[r], LOW);
+
+    for (int c = 0; c < 3; c++) {
+      if (mcp.digitalRead(albumCols[c]) == LOW) {
+        lastPress = millis();
+        return albumMap[r][c];
+      }
+    }
+  }
+
+  return 0;
+}
+
+char scanTrackKeypad() {
+  if (millis() - lastPress < debounceDelay) return 0;
+
+  for (int r = 0; r < 4; r++) {
+    setRowsHigh(trackRows);
+    mcp.digitalWrite(trackRows[r], LOW);
+
+    for (int c = 0; c < 3; c++) {
+      if (mcp.digitalRead(trackCols[c]) == LOW) {
+        lastPress = millis();
+        return trackMap[r][c];
+      }
+    }
+  }
+
+  return 0;
+}
+
+void setRowsHigh(byte rows[4]) {
+  for (int r = 0; r < 4; r++) {
+    mcp.digitalWrite(rows[r], HIGH);
+  }
+}
+
+void handleTrackKey(char key) {
+  if (key >= '0' && key <= '9') {
+    if (typedTrack.length() < 3) {
+      typedTrack += key;
+    }
+
+    Serial.print("Track typed: ");
+    Serial.println(typedTrack);
+
+    String line = "Track: " + typedTrack;
+    lcdPrintLine(1, line.c_str());
+  }
+
+  if (key == '*') {
+    typedTrack = "";
+    Serial.println("Track cleared");
+    lcdPrintLine(1, "Track cleared");
+    delay(500);
+    lcdPrintLine(1, "Enter track");
+  }
+
+  if (key == '#') {
+    playSong();
+  }
+}
+
+void playSong() {
+  if (selectedAlbum == 0) {
+    Serial.println("Pick an album first");
+    lcdPrintLine(0, "Pick album first");
+    lcdPrintLine(1, "");
+    delay(1000);
+    showHome();
+    return;
+  }
+
+  if (typedTrack.length() == 0) {
+    Serial.println("Type a track first");
+    lcdPrintLine(1, "Type track first");
+    delay(1000);
+    return;
+  }
+
+  int track = typedTrack.toInt();
+
+  if (track < 1 || track > trackCounts[selectedAlbum]) {
+    Serial.print("Invalid track. Album has ");
+    Serial.print(trackCounts[selectedAlbum]);
+    Serial.println(" tracks.");
+
+    lcdPrintLine(0, "Invalid track");
+    char msg[17];
+    snprintf(msg, sizeof(msg), "1-%d only", trackCounts[selectedAlbum]);
+    lcdPrintLine(1, msg);
+
+    typedTrack = "";
+    delay(1500);
+
+    getAlbumName(selectedAlbum, nameBuffer, sizeof(nameBuffer));
+    lcdPrintLine(0, nameBuffer);
+    lcdPrintLine(1, "Enter track");
+    return;
+  }
+
+  char albumBuffer[40];
+  char trackBuffer[80];
+
+  getAlbumName(selectedAlbum, albumBuffer, sizeof(albumBuffer));
+  getTrackName(selectedAlbum, track, trackBuffer, sizeof(trackBuffer));
+
+  Serial.print("Playing: ");
+  Serial.print(albumBuffer);
+  Serial.print(" / ");
+  Serial.println(trackBuffer);
+
+  lcd.clear();
+  lcdPrintLine(0, albumBuffer);
+  lcdPrintLine(1, trackBuffer);
+
+  mp3.playFolder(selectedAlbum, track);
+
+  typedTrack = "";
+}
+
+void getAlbumName(int album, char* buffer, size_t bufferSize) {
+  if (album < 1 || album > 12) {
+    strncpy(buffer, "Unknown Album", bufferSize);
+    buffer[bufferSize - 1] = '\0';
+    return;
+  }
+
+  PGM_P ptr = (PGM_P)pgm_read_word(&(albumNames[album]));
+  strncpy_P(buffer, ptr, bufferSize);
+  buffer[bufferSize - 1] = '\0';
+}
+
+void getTrackName(int album, int track, char* buffer, size_t bufferSize) {
+  if (album < 1 || album > 12 || track < 1 || track > trackCounts[album]) {
+    strncpy(buffer, "Unknown Track", bufferSize);
+    buffer[bufferSize - 1] = '\0';
+    return;
+  }
+
+  const char* const* albumPtr = (const char* const*)pgm_read_word(&(allTracks[album]));
+  PGM_P trackPtr = (PGM_P)pgm_read_word(&(albumPtr[track]));
+
+  strncpy_P(buffer, trackPtr, bufferSize);
+  buffer[bufferSize - 1] = '\0';
+}
+
+void lcdPrintLine(byte row, const char* text) {
+  lcd.setCursor(0, row);
+
+  for (int i = 0; i < 16; i++) {
+    if (text[i] == '\0') {
+      for (; i < 16; i++) lcd.print(' ');
+      break;
+    }
+    lcd.print(text[i]);
+  }
+}
+
+void showHome() {
+  lcd.clear();
+  lcdPrintLine(0, "Select Album");
+  lcdPrintLine(1, "Track then #");
+
+  Serial.println("Select album, type track, press #");
+}
