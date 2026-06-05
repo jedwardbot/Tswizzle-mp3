@@ -1,0 +1,173 @@
+TS13 Fuggler MP3 Player V1.0 
+
+PROJECT PURPOSE
+A Taylor Swift themed Fuggler MP3 player using Arduino Nano, DFPlayer Mini, 16x2 I2C LCD, MCP23017 keypad expander, rechargeable LiPo battery, TP4056 charger, MT3608 boost converter, speaker, headphone jack, and many custom controls.
+
+CURRENT FINAL CODE FILE
+TS13_Fuggler_MP3_Player_V1_0.ino
+
+MAJOR FEATURES IMPLEMENTED
+- 12 album folders on SD card.
+- Folder 13 reserved for sound effects.
+- /13/001.mp3 = startup sound.
+- Track keypad supports direct track number entry.
+- Album keypad chooses albums 1-12.
+- No album + entering track 13 opens "My Taylist" favorites secretly.
+- Favorites saved in EEPROM and survive power-off.
+- Hold * hearts/un-hearts current or hovered song.
+- Can heart a previewed song without playing it.
+- My Taylist browse mode supports Next/Previous preview before pressing # to play.
+- Album browse mode supports Next/Previous preview before pressing # to play.
+- Scrolling long track/album names without blocking button input.
+- Volume bar display with auto-return after 3 seconds.
+- Hold volume buttons repeats volume change.
+- Startup screen:
+  Line 1: It's Me, [face custom char]
+  Line 2: Hi. . .
+- Home screen:
+  Line 1 centered: [heart]TS13[heart]
+  Line 2: Choose an Era
+- Home screen briefly flashes battery/charging status every few seconds.
+- A0 battery voltage divider support.
+- D9 charging status detect support.
+- Music note before playing song titles.
+- Album disc icon only on album browsing line.
+- Star icon before My Taylist.
+- Shuffle/repeat custom icons removed from text display because they did not show well.
+- Shuffle/repeat text display only.
+- Regular album track counter briefly appears every few seconds.
+- My Taylist counter briefly appears every few seconds.
+- # + * returns to Home and now stops playback.
+
+BUTTON COMMANDS
+Media buttons:
+- Play short press: Play/Pause current song.
+- Hold Play: Random song from albums 1-12.
+- Previous short press: Previous track.
+- Hold Previous: Restart current song.
+- Next short press: Next track.
+- Hold Next: Repeat ON/OFF.
+- Previous + Next together: Shuffle ON/OFF.
+- Volume Up hold: Volume increases continuously.
+- Volume Down hold: Volume decreases continuously.
+
+Track keypad:
+- Numbers: type track number.
+- #: Enter / play typed track / play preview / start selected album / play selected Taylist item.
+- Hold *: Heart or un-heart current/previewed song.
+- Short *: clear typed track / clear selection.
+- # + *: Home screen and stop music.
+
+SD CARD STRUCTURE
+Folders:
+/01/001.mp3 etc. Taylor Swift
+/02/001.mp3 etc. Fearless
+/03/001.mp3 etc. Speak Now
+/04/001.mp3 etc. Red
+/05/001.mp3 etc. 1989
+/06/001.mp3 etc. Reputation
+/07/001.mp3 etc. Lover
+/08/001.mp3 etc. Folklore
+/09/001.mp3 etc. Evermore
+/10/001.mp3 etc. Midnights
+/11/001.mp3 etc. TTPD
+/12/001.mp3 etc. Life of a Showgirl
+/13/001.mp3 startup sound
+/13/002.mp3 optional future shutdown sound if MOSFET soft-power is added
+
+IMPORTANT PINOUT
+Arduino Nano:
+D2  = Play/Pause button
+D3  = Previous button
+D4  = Next button
+D5  = Volume Down button
+D6  = Volume Up button
+D7  = DFPlayer BUSY pin
+D9  = Charging status detect input from TP4056/charger signal
+D10 = SoftwareSerial TX to DFPlayer RX
+D11 = SoftwareSerial RX from DFPlayer TX
+A0  = Battery voltage divider midpoint
+A2  = floating/random seed input
+A4  = I2C SDA
+A5  = I2C SCL
+5V  = boosted 5V from MT3608 output
+GND = common ground
+
+I2C:
+LCD address = 0x26
+MCP23017 address = 0x27
+
+MCP23017 keypad wiring:
+Album keypad:
+Rows PA0-PA3 = pins 0,1,2,3
+Cols PA4-PA6 = pins 4,5,6
+Album map:
+1 2 3
+4 5 6
+7 8 9
+10 11 12
+
+Track keypad:
+Rows PB0-PB3 = pins 8,9,10,11
+Cols PB4-PB6 = pins 12,13,14
+Track map:
+1 2 3
+4 5 6
+7 8 9
+* 0 #
+
+POWER WIRING
+LiPo battery red -> TP4056 B+
+LiPo battery black -> TP4056 B-
+TP4056 OUT+ -> physical switch -> MT3608 IN+
+TP4056 OUT- -> MT3608 IN-
+MT3608 VOUT+ adjusted to about 5.00V -> Arduino 5V
+MT3608 VOUT- -> Arduino GND
+Do not use Nano VIN for boosted 5V; use 5V pin.
+All module grounds must be common.
+
+BATTERY VOLTAGE DIVIDER
+Use two equal high-value resistors:
+Battery+/TP4056 B+ -> 100k -> A0 midpoint -> 100k -> Battery-/GND
+Code assumes 100k+100k divider and multiplies A0 reading by 2.
+Battery status thresholds:
+>= 3.9V = Batt: Good
+>= 3.6V = Batt: Medium
+>= 3.3V = Batt: Low
+<  3.3V = Charge Battery
+
+CHARGING DETECT
+D9 is present as CHARGE_PIN.
+Current code:
+const byte CHARGE_ACTIVE_LEVEL = LOW;
+If the LCD says Charging at wrong times, change LOW to HIGH.
+D9 should ideally come from a true TP4056 CHRG signal/pad, not a random LED side that backfeeds.
+
+POWER NOTES
+Physical switch is V1 recommended.
+IRF5305 MOSFET soft-power was tested partially:
+- IRF5305 pinout front/text facing you: Gate, Drain, Source.
+- P-channel high side: Source to battery+, Drain to boost IN+, Gate pulled up to Source by 100k, button pulls Gate to GND.
+- Basic MOSFET test passed: Drain to battery- read ~0V off and ~4V on.
+Shutdown sound is NOT implemented yet because MOSFET latch is not finalized.
+
+KNOWN THINGS TO WATCH
+- If home charging status is inverted, change CHARGE_ACTIVE_LEVEL.
+- If track counter/home battery flash feels too frequent, adjust timing constants near the top.
+- If low battery reading is inaccurate, compare Serial battery voltage to multimeter and adjust thresholds.
+- A0 is battery divider, so randomSeed was changed to analogRead(A2).
+- If Arduino upload says COM port missing, choose correct COM port or reconnect USB cable.
+
+CURRENT LAYOUT PLAN INSIDE FUGGLER
+LCD: chest
+Nano + MCP + DFPlayer: head
+Speaker: belly
+Battery: lower belly
+Headphone jack: ear
+USB charger port: foot
+Power switch: back of neck
+LED/status optional: back, but V1 currently uses LCD status instead
+Volume buttons + track keypad: one arm
+Album keypad: other arm
+Next/Previous: feet
+
